@@ -2,65 +2,100 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-# Show the page title and description.
-st.set_page_config(page_title="Movies dataset", page_icon="🎬")
-st.title("🎬 Movies dataset")
-st.write(
-    """
-    This app visualizes data from [The Movie Database (TMDB)](https://www.kaggle.com/datasets/tmdb/tmdb-movie-metadata).
-    It shows which movie genre performed best at the box office over the years. Just 
-    click on the widgets below to explore!
-    """
-)
-
-
-# Load the data from a CSV. We're caching this so it doesn't reload every time the app
-# reruns (e.g. if the user interacts with the widgets).
+# Load the dataset
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/movies_genres_summary.csv")
-    return df
+    return pd.read_csv('survey_0.csv')
 
+data = load_data()
 
-df = load_data()
+# List of parameters to analyze
+parameters = [
+    '2. Total Dissolved Solid (mg/L)',
+    '3. Total Suspended Solid (mg/L)',
+    '6. Chemical Oxygen Demand (mg/L)',
+    '7. Biochemical Oxygen Demand (mg/L)',
+    '8. Dissloved Oxygen (mg/L)',
+    '9. Sulphate (mg/L)',
+    '11. Nitrate (mg/L)',
+    '13. Ammonia (mg/L)',
+    '15. Total Phosephate (mg/L)',
+    '34. Fecal Coliform (MPN/100 ML)',
+    '35. Total Coliform (MPN/100 ML)'
+]
 
-# Show a multiselect widget with the genres using `st.multiselect`.
-genres = st.multiselect(
-    "Genres",
-    df.genre.unique(),
-    ["Action", "Adventure", "Biography", "Comedy", "Drama", "Horror"],
+# Dictionary of safe limits for each parameter
+safe_limits = {
+    '2. Total Dissolved Solid (mg/L)': 500,
+    '3. Total Suspended Solid (mg/L)': 30,
+    '6. Chemical Oxygen Demand (mg/L)': 50,
+    '7. Biochemical Oxygen Demand (mg/L)': 10,
+    '8. Dissloved Oxygen (mg/L)': 5,
+    '9. Sulphate (mg/L)': 250,
+    '11. Nitrate (mg/L)': 10,
+    '13. Ammonia (mg/L)': 1,
+    '15. Total Phosephate (mg/L)': 0.1,
+    '34. Fecal Coliform (MPN/100 ML)': 100,
+    '35. Total Coliform (MPN/100 ML)': 1000
+}
+
+# Rename columns for easier reference
+renamed_columns = {
+    'NAMA DAS  :': 'Nama_DAS',
+    'BAGIAN DAS :': 'Bagian_DAS'
+}
+for param in parameters:
+    renamed_columns[param] = param
+
+# Select relevant columns and rename
+filtered_data = data[list(renamed_columns.keys())]
+filtered_data.columns = [renamed_columns[col] for col in filtered_data.columns]
+
+# Streamlit UI
+st.title('Water Quality Parameters Analysis')
+
+# Function to calculate average for each parameter
+def calculate_avg(parameter_name):
+    avg_by_das = filtered_data.groupby('Nama_DAS').apply(
+        lambda x: x[parameter_name].sum() / x['Bagian_DAS'].nunique()
+    ).reset_index(name=f'Average_{parameter_name}')
+    return avg_by_das
+
+# Create a selectbox for choosing the parameter
+selected_param = st.selectbox(
+    'Select Parameter',
+    parameters
 )
 
-# Show a slider widget with the years using `st.slider`.
-years = st.slider("Years", 1986, 2006, (2000, 2016))
-
-# Filter the dataframe based on the widget input and reshape it.
-df_filtered = df[(df["genre"].isin(genres)) & (df["year"].between(years[0], years[1]))]
-df_reshaped = df_filtered.pivot_table(
-    index="year", columns="genre", values="gross", aggfunc="sum", fill_value=0
-)
-df_reshaped = df_reshaped.sort_values(by="year", ascending=False)
-
-
-# Display the data as a table using `st.dataframe`.
-st.dataframe(
-    df_reshaped,
-    use_container_width=True,
-    column_config={"year": st.column_config.TextColumn("Year")},
-)
-
-# Display the data as an Altair chart using `st.altair_chart`.
-df_chart = pd.melt(
-    df_reshaped.reset_index(), id_vars="year", var_name="genre", value_name="gross"
-)
-chart = (
-    alt.Chart(df_chart)
-    .mark_line()
-    .encode(
-        x=alt.X("year:N", title="Year"),
-        y=alt.Y("gross:Q", title="Gross earnings ($)"),
-        color="genre:N",
+# Calculate average and display data
+if selected_param:
+    avg_data = calculate_avg(selected_param)
+    st.write(f"Average values for {selected_param}")
+    
+    # Create Altair chart
+    chart = (
+        alt.Chart(avg_data)
+        .mark_bar()
+        .encode(
+            x=alt.X('Nama_DAS:N', title='Nama DAS'),
+            y=alt.Y(f'Average_{selected_param}:Q', title=f'Average {selected_param}'),
+            color=alt.value('steelblue')
+        )
+        .properties(
+            title=f'Average {selected_param} for Each DAS',
+            width=600,
+            height=400
+        )
     )
-    .properties(height=320)
-)
-st.altair_chart(chart, use_container_width=True)
+    
+    # Add a horizontal line for safe limit
+    safe_limit = safe_limits[selected_param]
+    line = (
+        alt.Chart(pd.DataFrame({'y': [safe_limit]}))
+        .mark_rule(color='red', strokeWidth=2, strokeDash=[4, 4])
+        .encode(y='y:Q')
+    )
+    
+    st.altair_chart(chart + line, use_container_width=True)
+    
+    st.write(f"Safe Limit: {safe_limit}")
