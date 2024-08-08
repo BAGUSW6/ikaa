@@ -1,5 +1,6 @@
-import altair as alt
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 # Load the dataset
@@ -47,55 +48,46 @@ renamed_columns = {
 for param in parameters:
     renamed_columns[param] = param
 
-# Select relevant columns and rename
+# Select relevant columns
 filtered_data = data[list(renamed_columns.keys())]
 filtered_data.columns = [renamed_columns[col] for col in filtered_data.columns]
 
-# Streamlit UI
-st.title('Water Quality Parameters Analysis')
-
-# Function to calculate average for each parameter
-def calculate_avg(parameter_name):
-    avg_by_das = filtered_data.groupby('Nama_DAS').apply(
+# Function to calculate and plot average for each parameter
+def plot_parameter_avg(parameter_name):
+    # Group data by Nama_DAS and calculate the average for each Nama_DAS
+    average_by_das = filtered_data.groupby('Nama_DAS').apply(
         lambda x: x[parameter_name].sum() / x['Bagian_DAS'].nunique()
     ).reset_index(name=f'Average_{parameter_name}')
-    return avg_by_das
 
-# Create a selectbox for choosing the parameter
-selected_param = st.selectbox(
-    'Select Parameter',
-    parameters
-)
+    # Create the bar chart using Plotly
+    fig = px.bar(average_by_das, x='Nama_DAS', y=f'Average_{parameter_name}',
+                 title=f'Average {parameter_name} for Each DAS',
+                 labels={'Nama_DAS': 'Nama DAS', f'Average_{parameter_name}': f'Average {parameter_name}'})
 
-# Calculate average and display data
-if selected_param:
-    avg_data = calculate_avg(selected_param)
-    st.write(f"Average values for {selected_param}")
-    
-    # Create Altair chart
-    chart = (
-        alt.Chart(avg_data)
-        .mark_bar()
-        .encode(
-            x=alt.X('Nama_DAS:N', title='Nama DAS'),
-            y=alt.Y(f'Average_{selected_param}:Q', title=f'Average {selected_param}'),
-            color=alt.value('steelblue')
-        )
-        .properties(
-            title=f'Average {selected_param} for Each DAS',
-            width=600,
-            height=400
-        )
+    # Add a horizontal dashed line indicating the safe limit
+    fig.add_shape(
+        type="line",
+        x0=0, x1=1, y0=safe_limits[parameter_name], y1=safe_limits[parameter_name],
+        line=dict(color="red", width=2, dash="dash"),
+        xref="paper", yref="y"
     )
-    
-    # Add a horizontal line for safe limit
-    safe_limit = safe_limits[selected_param]
-    line = (
-        alt.Chart(pd.DataFrame({'y': [safe_limit]}))
-        .mark_rule(color='red', strokeWidth=2, strokeDash=[4, 4])
-        .encode(y='y:Q')
+
+    # Add annotation to show the safe limit value
+    fig.add_annotation(
+        xref="paper", x=1, y=safe_limits[parameter_name],
+        xanchor="left", yanchor="middle",
+        text=f"Safe Limit: {safe_limits[parameter_name]}",
+        showarrow=False,
+        font=dict(color="red")
     )
-    
-    st.altair_chart(chart + line, use_container_width=True)
-    
-    st.write(f"Safe Limit: {safe_limit}")
+
+    return fig
+
+# Streamlit widgets
+st.title("Environmental Parameter Analysis")
+
+parameter = st.selectbox("Select Parameter", parameters)
+
+# Display the plot
+fig = plot_parameter_avg(parameter)
+st.plotly_chart(fig, use_container_width=True)
