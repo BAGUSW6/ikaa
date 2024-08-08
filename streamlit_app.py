@@ -1,6 +1,5 @@
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import altair as alt
 import streamlit as st
 
 # Load the dataset
@@ -59,29 +58,31 @@ def plot_parameter_avg(parameter_name):
         lambda x: x[parameter_name].sum() / x['Bagian_DAS'].nunique()
     ).reset_index(name=f'Average_{parameter_name}')
 
-    # Create the bar chart using Plotly
-    fig = px.bar(average_by_das, x='Nama_DAS', y=f'Average_{parameter_name}',
-                 title=f'Average {parameter_name} for Each DAS',
-                 labels={'Nama_DAS': 'Nama DAS', f'Average_{parameter_name}': f'Average {parameter_name}'})
+    # Create the bar chart using Altair
+    base = alt.Chart(average_by_das).encode(x='Nama_DAS:N')
 
-    # Add a horizontal dashed line indicating the safe limit
-    fig.add_shape(
-        type="line",
-        x0=0, x1=1, y0=safe_limits[parameter_name], y1=safe_limits[parameter_name],
-        line=dict(color="red", width=2, dash="dash"),
-        xref="paper", yref="y"
+    bars = base.mark_bar().encode(
+        y=alt.Y(f'Average_{parameter_name}:Q', title=f'Average {parameter_name}')
     )
 
-    # Add annotation to show the safe limit value
-    fig.add_annotation(
-        xref="paper", x=1, y=safe_limits[parameter_name],
-        xanchor="left", yanchor="middle",
-        text=f"Safe Limit: {safe_limits[parameter_name]}",
-        showarrow=False,
-        font=dict(color="red")
+    # Add a horizontal line for the safe limit
+    line = alt.Chart(pd.DataFrame({'y': [safe_limits[parameter_name]]})).mark_rule(color='red').encode(
+        y='y:Q'
     )
 
-    return fig
+    # Combine the charts
+    chart = (bars + line).properties(
+        title=f'Average {parameter_name} for Each DAS',
+        height=400
+    ).configure_axis(
+        grid=False
+    ).configure_title(
+        fontSize=16,
+        anchor='start',
+        color='gray'
+    )
+
+    return chart
 
 # Streamlit widgets
 st.title("Environmental Parameter Analysis")
@@ -89,5 +90,5 @@ st.title("Environmental Parameter Analysis")
 parameter = st.selectbox("Select Parameter", parameters)
 
 # Display the plot
-fig = plot_parameter_avg(parameter)
-st.plotly_chart(fig, use_container_width=True)
+chart = plot_parameter_avg(parameter)
+st.altair_chart(chart, use_container_width=True)
